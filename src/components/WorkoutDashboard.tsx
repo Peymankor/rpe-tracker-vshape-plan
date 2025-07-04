@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { Activity, Target, TrendingUp } from "lucide-react";
 import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
+import { testFirebaseConnection } from '@/lib/firebase-test';
 
 interface Exercise {
   name: string;
@@ -202,6 +203,7 @@ export function WorkoutDashboard() {
   const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>({});
   const [adjustedWorkouts, setAdjustedWorkouts] = useState(workoutData);
   const [saveStatus, setSaveStatus] = useState<string>("");
+  const [testStatus, setTestStatus] = useState<string>("");
 
   const adjustWeightBasedOnRPE = (originalWeight: string, rpe: number): string => {
     // Parse weight (handle different formats like "50 kg", "bodyweight", etc.)
@@ -316,27 +318,56 @@ export function WorkoutDashboard() {
   const completedSessions = getCompletedSessions();
   const monthlyAverage = calculateMonthlyAverage();
 
-  // Helper to save current session's workout data as text to Supabase
+  // Helper to save current session's workout data to Firebase Firestore
   const saveCurrentSession = async (day: number, week: number) => {
     const workout = adjustedWorkouts.find(w => w.day === day && w.week === week);
     if (!workout) return;
+    
     const rpeValues = getRPEForSession(day, week);
     const completionValues = getCompletionForSession(day, week);
+    
+    // Check if there's any data to save
+    const hasData = rpeValues.some(rpe => rpe > 0) || completionValues.some(completed => completed);
+    if (!hasData) {
+      setSaveStatus('No data to save. Please enter RPE values or mark exercises as completed.');
+      setTimeout(() => setSaveStatus(''), 3000);
+      return;
+    }
+    
     // Compose a text summary
     const text = workout.exercises.map((ex, i) =>
       `${ex.name}: ${ex.sets}x${ex.reps} @ ${ex.weight} | RPE: ${rpeValues[i] || '-'} | Done: ${completionValues[i] ? 'Yes' : 'No'}`
     ).join('\n');
+    
+    setSaveStatus('Saving...');
+    
     try {
-      await addWorkout({
+      const docRef = await addDoc(collection(db, 'workouts'), {
         day,
         week,
+        title: workout.title,
         text,
+        rpeValues,
+        completionValues,
         created_at: new Date().toISOString(),
       });
-      setSaveStatus(`Saved for Day ${day}, Week ${week}`);
+      setSaveStatus(`Successfully saved for Day ${day}, Week ${week}!`);
+      console.log('Document written with ID: ', docRef.id);
     } catch (e) {
-      setSaveStatus('Error saving to database');
+      setSaveStatus('Error saving to database. Please check your internet connection and try again.');
+      console.error('Error saving workout:', e);
     }
+    
+    // Clear status after 3 seconds
+    setTimeout(() => setSaveStatus(''), 3000);
+  };
+
+  // Test Firebase connection
+  const handleTestConnection = async () => {
+    setTestStatus('Testing connection...');
+    const success = await testFirebaseConnection();
+    setTestStatus(success ? '✅ Firebase connection successful!' : '❌ Firebase connection failed. Check console for details.');
+    setTimeout(() => setTestStatus(''), 5000);
   };
 
   return (
@@ -350,6 +381,23 @@ export function WorkoutDashboard() {
           <p className="text-muted-foreground text-lg">
             Month 1 – Foundation Block • Track your RPE for optimal progression
           </p>
+          <button
+            onClick={handleTestConnection}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+          >
+            Test Firebase Connection
+          </button>
+          {testStatus && (
+            <div className={`text-center font-semibold p-2 rounded-md ${
+              testStatus.includes('✅') 
+                ? 'bg-green-100 text-green-700 border border-green-300' 
+                : testStatus.includes('❌') 
+                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  : 'bg-blue-100 text-blue-700 border border-blue-300'
+            }`}>
+              {testStatus}
+            </div>
+          )}
         </div>
 
         {/* Stats Overview */}
@@ -426,7 +474,17 @@ export function WorkoutDashboard() {
           ))}
         </div>
         {saveStatus && (
-          <div className="text-center text-green-600 font-semibold mt-4">{saveStatus}</div>
+          <div className={`text-center font-semibold mt-4 p-3 rounded-md ${
+            saveStatus.includes('Error') 
+              ? 'bg-red-100 text-red-700 border border-red-300' 
+              : saveStatus.includes('Successfully') 
+                ? 'bg-green-100 text-green-700 border border-green-300'
+                : saveStatus.includes('No data') 
+                  ? 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                  : 'bg-blue-100 text-blue-700 border border-blue-300'
+          }`}>
+            {saveStatus}
+          </div>
         )}
 
         {/* RPE Guide */}
