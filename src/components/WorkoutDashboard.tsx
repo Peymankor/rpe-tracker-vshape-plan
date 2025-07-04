@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Activity, Target, TrendingUp } from "lucide-react";
 import { db } from '@/lib/firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { testFirebaseConnection } from '@/lib/firebase-test';
 
 interface Exercise {
@@ -220,6 +220,8 @@ export function WorkoutDashboard() {
   const [saveStatus, setSaveStatus] = useState<string>("");
   const [testStatus, setTestStatus] = useState<string>("");
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>("");
+  const [syncStatus, setSyncStatus] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
 
   // Persist rpeData to localStorage whenever it changes
   useEffect(() => {
@@ -230,6 +232,73 @@ export function WorkoutDashboard() {
   useEffect(() => {
     localStorage.setItem('workout-completion-data', JSON.stringify(completionData));
   }, [completionData]);
+
+  // Cloud sync functions
+  const saveToCloud = async (rpeData: { [key: string]: number[] }, completionData: { [key: string]: boolean[] }) => {
+    try {
+      // Save RPE data
+      await setDoc(doc(db, 'workout-data', 'rpe'), {
+        data: rpeData,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Save completion data
+      await setDoc(doc(db, 'workout-data', 'completion'), {
+        data: completionData,
+        updatedAt: new Date().toISOString()
+      });
+      
+      console.log('✅ Data synced to cloud');
+    } catch (error) {
+      console.error('❌ Error syncing to cloud:', error);
+    }
+  };
+
+  const loadFromCloud = async () => {
+    try {
+      setSyncStatus('Loading from cloud...');
+      
+      // Load RPE data
+      const rpeDoc = await getDocs(query(collection(db, 'workout-data'), where('__name__', '==', 'rpe')));
+      const completionDoc = await getDocs(query(collection(db, 'workout-data'), where('__name__', '==', 'completion')));
+      
+      let cloudRPE = {};
+      let cloudCompletion = {};
+      
+      if (!rpeDoc.empty) {
+        const rpeData = rpeDoc.docs[0].data();
+        cloudRPE = rpeData.data || {};
+      }
+      
+      if (!completionDoc.empty) {
+        const completionData = completionDoc.docs[0].data();
+        cloudCompletion = completionData.data || {};
+      }
+      
+      // Merge with local data (cloud takes precedence)
+      const mergedRPE = { ...rpeData, ...cloudRPE };
+      const mergedCompletion = { ...completionData, ...cloudCompletion };
+      
+      setRPEData(mergedRPE);
+      setCompletionData(mergedCompletion);
+      
+      setSyncStatus('✅ Cloud sync complete');
+      setTimeout(() => setSyncStatus(''), 2000);
+      
+      console.log('✅ Data loaded from cloud');
+    } catch (error) {
+      console.error('❌ Error loading from cloud:', error);
+      setSyncStatus('❌ Cloud sync failed - using local data');
+      setTimeout(() => setSyncStatus(''), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load from cloud on component mount
+  useEffect(() => {
+    loadFromCloud();
+  }, []);
 
   const adjustWeightBasedOnRPE = (originalWeight: string, rpe: number): string => {
     // Parse weight (handle different formats like "50 kg", "bodyweight", etc.)
@@ -292,11 +361,15 @@ export function WorkoutDashboard() {
     }
   };
 
-  // Save data to localStorage
-  const saveToStorage = (rpeData: { [key: string]: number[] }, completionData: { [key: string]: boolean[] }) => {
+  // Save data to localStorage and cloud
+  const saveToStorage = async (rpeData: { [key: string]: number[] }, completionData: { [key: string]: boolean[] }) => {
     try {
+      // Save to localStorage
       localStorage.setItem('workout-rpe-data', JSON.stringify(rpeData));
       localStorage.setItem('workout-completion-data', JSON.stringify(completionData));
+      
+      // Save to cloud (async, don't wait)
+      saveToCloud(rpeData, completionData);
     } catch (error) {
       console.error('Error saving to localStorage:', error);
     }
@@ -310,11 +383,11 @@ export function WorkoutDashboard() {
       updated[exerciseIndex] = rpe;
       const newData = { ...prev, [key]: updated };
       
-      // Save to localStorage
+      // Save to localStorage and cloud
       saveToStorage(newData, completionData);
       
       // Show auto-save indicator
-      setAutoSaveStatus('Auto-saved');
+      setAutoSaveStatus('Auto-saved to cloud');
       setTimeout(() => setAutoSaveStatus(''), 1000);
       
       // Check if Week 1 is complete after this change
@@ -334,11 +407,11 @@ export function WorkoutDashboard() {
       updated[exerciseIndex] = completed;
       const newData = { ...prev, [key]: updated };
       
-      // Save to localStorage
+      // Save to localStorage and cloud
       saveToStorage(rpeData, newData);
       
       // Show auto-save indicator
-      setAutoSaveStatus('Auto-saved');
+      setAutoSaveStatus('Auto-saved to cloud');
       setTimeout(() => setAutoSaveStatus(''), 1000);
       
       return newData;
@@ -430,16 +503,36 @@ export function WorkoutDashboard() {
   };
 
   // Clear all saved data
-  const handleClearData = () => {
+  const handleClearData = async () => {
     if (window.confirm('Are you sure you want to clear all saved workout data? This cannot be undone.')) {
-      localStorage.removeItem('workout-rpe-data');
-      localStorage.removeItem('workout-completion-data');
-      setRPEData({});
-      setCompletionData({});
-      setAdjustedWorkouts(workoutData);
-      setSaveStatus('All data cleared successfully!');
-      setTimeout(() => setSaveStatus(''), 3000);
+      try {
+        // Clear localStorage
+        localStorage.removeItem('workout-rpe-data');
+        localStorage.removeItem('workout-completion-data');
+        
+        // Clear cloud data
+        await deleteDoc(doc(db, 'workout-data', 'rpe'));
+        await deleteDoc(doc(db, 'workout-data', 'completion'));
+        
+        setRPEData({});
+        setCompletionData({});
+        setAdjustedWorkouts(workoutData);
+        setSaveStatus('All data cleared from device and cloud!');
+        setTimeout(() => setSaveStatus(''), 3000);
+      } catch (error) {
+        console.error('Error clearing cloud data:', error);
+        setSaveStatus('Local data cleared, but cloud clear failed');
+        setTimeout(() => setSaveStatus(''), 3000);
+      }
     }
+  };
+
+  // Manual sync function
+  const handleManualSync = async () => {
+    setSyncStatus('Syncing...');
+    await saveToCloud(rpeData, completionData);
+    setSyncStatus('✅ Manual sync complete');
+    setTimeout(() => setSyncStatus(''), 2000);
   };
 
   return (
@@ -453,12 +546,18 @@ export function WorkoutDashboard() {
           <p className="text-muted-foreground text-lg">
             Month 1 – Foundation Block • Track your RPE for optimal progression
           </p>
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center flex-wrap">
             <button
               onClick={handleTestConnection}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
             >
               Test Firebase Connection
+            </button>
+            <button
+              onClick={handleManualSync}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+            >
+              Sync to Cloud
             </button>
             <button
               onClick={handleClearData}
@@ -467,6 +566,22 @@ export function WorkoutDashboard() {
               Clear All Data
             </button>
           </div>
+          {isLoading && (
+            <div className="text-center text-blue-600 text-sm font-medium">
+              Loading your workout data...
+            </div>
+          )}
+          {syncStatus && (
+            <div className={`text-center font-semibold p-2 rounded-md ${
+              syncStatus.includes('✅') 
+                ? 'bg-green-100 text-green-700 border border-green-300' 
+                : syncStatus.includes('❌') 
+                  ? 'bg-red-100 text-red-700 border border-red-300'
+                  : 'bg-blue-100 text-blue-700 border border-blue-300'
+            }`}>
+              {syncStatus}
+            </div>
+          )}
           {autoSaveStatus && (
             <div className="text-center text-green-600 text-sm font-medium">
               {autoSaveStatus}
