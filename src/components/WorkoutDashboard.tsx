@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WorkoutCard } from "./WorkoutCard";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -199,11 +199,37 @@ const workoutData = [
 ];
 
 export function WorkoutDashboard() {
-  const [rpeData, setRPEData] = useState<{ [key: string]: number[] }>({});
-  const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>({});
+  // Load data from localStorage on component mount
+  const loadFromStorage = () => {
+    try {
+      const savedRPE = localStorage.getItem('workout-rpe-data');
+      const savedCompletion = localStorage.getItem('workout-completion-data');
+      return {
+        rpe: savedRPE ? JSON.parse(savedRPE) : {},
+        completion: savedCompletion ? JSON.parse(savedCompletion) : {}
+      };
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+      return { rpe: {}, completion: {} };
+    }
+  };
+
+  const [rpeData, setRPEData] = useState<{ [key: string]: number[] }>(() => loadFromStorage().rpe);
+  const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>(() => loadFromStorage().completion);
   const [adjustedWorkouts, setAdjustedWorkouts] = useState(workoutData);
   const [saveStatus, setSaveStatus] = useState<string>("");
   const [testStatus, setTestStatus] = useState<string>("");
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>("");
+
+  // Persist rpeData to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('workout-rpe-data', JSON.stringify(rpeData));
+  }, [rpeData]);
+
+  // Persist completionData to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('workout-completion-data', JSON.stringify(completionData));
+  }, [completionData]);
 
   const adjustWeightBasedOnRPE = (originalWeight: string, rpe: number): string => {
     // Parse weight (handle different formats like "50 kg", "bodyweight", etc.)
@@ -266,6 +292,16 @@ export function WorkoutDashboard() {
     }
   };
 
+  // Save data to localStorage
+  const saveToStorage = (rpeData: { [key: string]: number[] }, completionData: { [key: string]: boolean[] }) => {
+    try {
+      localStorage.setItem('workout-rpe-data', JSON.stringify(rpeData));
+      localStorage.setItem('workout-completion-data', JSON.stringify(completionData));
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  };
+
   const handleRPEChange = (day: number, week: number, exerciseIndex: number, rpe: number) => {
     const key = `${day}-${week}`;
     setRPEData(prev => {
@@ -273,6 +309,13 @@ export function WorkoutDashboard() {
       const updated = [...current];
       updated[exerciseIndex] = rpe;
       const newData = { ...prev, [key]: updated };
+      
+      // Save to localStorage
+      saveToStorage(newData, completionData);
+      
+      // Show auto-save indicator
+      setAutoSaveStatus('Auto-saved');
+      setTimeout(() => setAutoSaveStatus(''), 1000);
       
       // Check if Week 1 is complete after this change
       if (week === 1) {
@@ -289,7 +332,16 @@ export function WorkoutDashboard() {
       const current = prev[key] || [false, false, false, false];
       const updated = [...current];
       updated[exerciseIndex] = completed;
-      return { ...prev, [key]: updated };
+      const newData = { ...prev, [key]: updated };
+      
+      // Save to localStorage
+      saveToStorage(rpeData, newData);
+      
+      // Show auto-save indicator
+      setAutoSaveStatus('Auto-saved');
+      setTimeout(() => setAutoSaveStatus(''), 1000);
+      
+      return newData;
     });
   };
 
@@ -314,8 +366,15 @@ export function WorkoutDashboard() {
     ).length;
   };
 
+  const getTotalCompletedExercises = (): number => {
+    return Object.values(completionData).reduce((total, session) => 
+      total + session.filter(completed => completed).length, 0
+    );
+  };
+
   const totalSessions = 16;
   const completedSessions = getCompletedSessions();
+  const totalCompletedExercises = getTotalCompletedExercises();
   const monthlyAverage = calculateMonthlyAverage();
 
   // Helper to save current session's workout data to Firebase Firestore
@@ -370,6 +429,19 @@ export function WorkoutDashboard() {
     setTimeout(() => setTestStatus(''), 5000);
   };
 
+  // Clear all saved data
+  const handleClearData = () => {
+    if (window.confirm('Are you sure you want to clear all saved workout data? This cannot be undone.')) {
+      localStorage.removeItem('workout-rpe-data');
+      localStorage.removeItem('workout-completion-data');
+      setRPEData({});
+      setCompletionData({});
+      setAdjustedWorkouts(workoutData);
+      setSaveStatus('All data cleared successfully!');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -381,12 +453,25 @@ export function WorkoutDashboard() {
           <p className="text-muted-foreground text-lg">
             Month 1 – Foundation Block • Track your RPE for optimal progression
           </p>
-          <button
-            onClick={handleTestConnection}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-          >
-            Test Firebase Connection
-          </button>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={handleTestConnection}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            >
+              Test Firebase Connection
+            </button>
+            <button
+              onClick={handleClearData}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+            >
+              Clear All Data
+            </button>
+          </div>
+          {autoSaveStatus && (
+            <div className="text-center text-green-600 text-sm font-medium">
+              {autoSaveStatus}
+            </div>
+          )}
           {testStatus && (
             <div className={`text-center font-semibold p-2 rounded-md ${
               testStatus.includes('✅') 
@@ -408,6 +493,7 @@ export function WorkoutDashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">Sessions Completed</p>
                 <p className="text-2xl font-bold">{completedSessions}/{totalSessions}</p>
+                <p className="text-xs text-muted-foreground">{totalCompletedExercises} exercises done</p>
               </div>
             </div>
             <div className="mt-4">
