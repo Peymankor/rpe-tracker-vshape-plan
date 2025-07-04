@@ -197,6 +197,7 @@ const workoutData = [
 
 export function WorkoutDashboard() {
   const [rpeData, setRPEData] = useState<{ [key: string]: number[] }>({});
+  const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>({});
 
   const handleRPEChange = (day: number, week: number, exerciseIndex: number, rpe: number) => {
     const key = `${day}-${week}`;
@@ -208,9 +209,24 @@ export function WorkoutDashboard() {
     });
   };
 
+  const handleCompletionChange = (day: number, week: number, exerciseIndex: number, completed: boolean) => {
+    const key = `${day}-${week}`;
+    setCompletionData(prev => {
+      const current = prev[key] || [false, false, false, false];
+      const updated = [...current];
+      updated[exerciseIndex] = completed;
+      return { ...prev, [key]: updated };
+    });
+  };
+
   const getRPEForSession = (day: number, week: number): number[] => {
     const key = `${day}-${week}`;
     return rpeData[key] || [0, 0, 0, 0];
+  };
+
+  const getCompletionForSession = (day: number, week: number): boolean[] => {
+    const key = `${day}-${week}`;
+    return completionData[key] || [false, false, false, false];
   };
 
   const calculateMonthlyAverage = (): number => {
@@ -301,37 +317,63 @@ export function WorkoutDashboard() {
               title={workout.title}
               exercises={workout.exercises}
               onRPEChange={handleRPEChange}
+              onCompletionChange={handleCompletionChange}
               rpeValues={getRPEForSession(workout.day, workout.week)}
+              completionValues={getCompletionForSession(workout.day, workout.week)}
             />
           ))}
         </div>
 
         {/* RPE Guide */}
-        <Card className="bg-workout-card border-border p-6">
-          <h3 className="text-lg font-semibold mb-4">RPE Scale Guide</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-            <div className="text-center">
-              <Badge className="bg-success text-success-foreground mb-2">1-3</Badge>
-              <p className="text-muted-foreground">Easy recovery</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="bg-workout-card border-border p-6">
+            <h3 className="text-lg font-semibold mb-4">Week 1 - Test Week (1-5 Scale)</h3>
+            <div className="grid grid-cols-1 gap-3 text-sm">
+              <div className="flex items-center justify-between">
+                <Badge className="bg-success text-success-foreground">1</Badge>
+                <span className="text-muted-foreground">Super Easy</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-success text-success-foreground">2</Badge>
+                <span className="text-muted-foreground">Easy</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-primary text-primary-foreground">3</Badge>
+                <span className="text-muted-foreground">Normal</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-warning text-warning-foreground">4</Badge>
+                <span className="text-muted-foreground">Barely manageable</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-destructive text-destructive-foreground">5</Badge>
+                <span className="text-muted-foreground">Can't complete</span>
+              </div>
             </div>
-            <div className="text-center">
-              <Badge className="bg-success text-success-foreground mb-2">4-5</Badge>
-              <p className="text-muted-foreground">Moderate effort</p>
+          </Card>
+
+          <Card className="bg-workout-card border-border p-6">
+            <h3 className="text-lg font-semibold mb-4">Weeks 2-4 - Standard RPE (1-10)</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="text-center">
+                <Badge className="bg-success text-success-foreground mb-2">1-3</Badge>
+                <p className="text-muted-foreground">Easy recovery</p>
+              </div>
+              <div className="text-center">
+                <Badge className="bg-success text-success-foreground mb-2">4-5</Badge>
+                <p className="text-muted-foreground">Moderate effort</p>
+              </div>
+              <div className="text-center">
+                <Badge className="bg-warning text-warning-foreground mb-2">6-7</Badge>
+                <p className="text-muted-foreground">Hard but doable</p>
+              </div>
+              <div className="text-center">
+                <Badge className="bg-destructive text-destructive-foreground mb-2">8-10</Badge>
+                <p className="text-muted-foreground">Very hard to max</p>
+              </div>
             </div>
-            <div className="text-center">
-              <Badge className="bg-warning text-warning-foreground mb-2">6-7</Badge>
-              <p className="text-muted-foreground">Hard but doable</p>
-            </div>
-            <div className="text-center">
-              <Badge className="bg-destructive text-destructive-foreground mb-2">8-9</Badge>
-              <p className="text-muted-foreground">Very hard</p>
-            </div>
-            <div className="text-center">
-              <Badge className="bg-destructive text-destructive-foreground mb-2">10</Badge>
-              <p className="text-muted-foreground">Maximum effort</p>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );

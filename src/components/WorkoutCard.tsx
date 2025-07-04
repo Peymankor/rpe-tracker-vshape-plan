@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Exercise {
   name: string;
@@ -16,22 +17,40 @@ interface WorkoutCardProps {
   title: string;
   exercises: Exercise[];
   onRPEChange: (day: number, week: number, exerciseIndex: number, rpe: number) => void;
+  onCompletionChange: (day: number, week: number, exerciseIndex: number, completed: boolean) => void;
   rpeValues: number[];
+  completionValues: boolean[];
 }
 
-export function WorkoutCard({ day, week, title, exercises, onRPEChange, rpeValues }: WorkoutCardProps) {
+export function WorkoutCard({ day, week, title, exercises, onRPEChange, onCompletionChange, rpeValues, completionValues }: WorkoutCardProps) {
   const [hoveredExercise, setHoveredExercise] = useState<number | null>(null);
 
-  const getRPEColor = (rpe: number) => {
+  const getRPEColor = (rpe: number, week: number) => {
     if (rpe === 0) return "bg-muted text-muted-foreground";
-    if (rpe <= 3) return "bg-success text-success-foreground";
-    if (rpe <= 6) return "bg-warning text-warning-foreground";
-    return "bg-destructive text-destructive-foreground";
+    
+    // Week 1 is test week with different scale
+    if (week === 1) {
+      if (rpe === 5) return "bg-destructive text-destructive-foreground"; // Can't do
+      if (rpe === 4) return "bg-warning text-warning-foreground"; // Barely
+      if (rpe === 3) return "bg-primary text-primary-foreground"; // Normal
+      if (rpe <= 2) return "bg-success text-success-foreground"; // Easy/Super easy
+    } else {
+      // Standard RPE scale for weeks 2-4
+      if (rpe <= 3) return "bg-success text-success-foreground";
+      if (rpe <= 6) return "bg-warning text-warning-foreground";
+      return "bg-destructive text-destructive-foreground";
+    }
+    return "bg-muted text-muted-foreground";
   };
 
   const handleRPEChange = (exerciseIndex: number, value: string) => {
-    const rpe = Math.max(0, Math.min(10, parseInt(value) || 0));
+    const maxRPE = week === 1 ? 5 : 10; // Test week uses 1-5 scale
+    const rpe = Math.max(0, Math.min(maxRPE, parseInt(value) || 0));
     onRPEChange(day, week, exerciseIndex, rpe);
+  };
+
+  const handleCompletionChange = (exerciseIndex: number, completed: boolean) => {
+    onCompletionChange(day, week, exerciseIndex, completed);
   };
 
   return (
@@ -64,18 +83,23 @@ export function WorkoutCard({ day, week, title, exercises, onRPEChange, rpeValue
               </div>
               
               <div className="flex items-center space-x-2 ml-2">
+                <Checkbox
+                  checked={completionValues[index] || false}
+                  onCheckedChange={(checked) => handleCompletionChange(index, !!checked)}
+                  className="w-4 h-4"
+                />
                 <Input
                   type="number"
                   min="0"
-                  max="10"
+                  max={week === 1 ? "5" : "10"}
                   value={rpeValues[index] || ""}
                   onChange={(e) => handleRPEChange(index, e.target.value)}
                   className="w-12 h-7 text-xs text-center"
-                  placeholder="RPE"
+                  placeholder={week === 1 ? "1-5" : "RPE"}
                 />
                 {rpeValues[index] > 0 && (
                   <Badge 
-                    className={`text-xs px-1.5 py-0.5 ${getRPEColor(rpeValues[index])}`}
+                    className={`text-xs px-1.5 py-0.5 ${getRPEColor(rpeValues[index], week)}`}
                   >
                     {rpeValues[index]}
                   </Badge>
