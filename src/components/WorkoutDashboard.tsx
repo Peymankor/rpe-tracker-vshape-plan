@@ -198,6 +198,68 @@ const workoutData = [
 export function WorkoutDashboard() {
   const [rpeData, setRPEData] = useState<{ [key: string]: number[] }>({});
   const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>({});
+  const [adjustedWorkouts, setAdjustedWorkouts] = useState(workoutData);
+
+  const adjustWeightBasedOnRPE = (originalWeight: string, rpe: number): string => {
+    // Parse weight (handle different formats like "50 kg", "bodyweight", etc.)
+    if (originalWeight.toLowerCase().includes('bodyweight')) {
+      if (rpe <= 2) return originalWeight + " + 2.5kg";
+      if (rpe === 4) return originalWeight + " - 2.5kg";
+      if (rpe === 5) return originalWeight + " - 5kg";
+      return originalWeight; // RPE 3 stays same
+    }
+
+    const weightMatch = originalWeight.match(/(\d+(?:\.\d+)?)/);
+    if (!weightMatch) return originalWeight;
+    
+    const weight = parseFloat(weightMatch[1]);
+    let newWeight = weight;
+
+    if (rpe <= 2) {
+      newWeight = weight + 5; // Increase by 5kg for easy
+    } else if (rpe === 4) {
+      newWeight = weight - 2.5; // Decrease by 2.5kg for barely
+    } else if (rpe === 5) {
+      newWeight = weight - 5; // Decrease by 5kg for can't do
+    }
+    // RPE 3 keeps same weight
+
+    return originalWeight.replace(/\d+(?:\.\d+)?/, newWeight.toString());
+  };
+
+  const checkAndAdjustWeek2 = () => {
+    // Check if Week 1 is complete (all 4 days have RPE data)
+    const week1Days = [1, 2, 3, 4];
+    const week1Complete = week1Days.every(day => {
+      const rpeValues = getRPEForSession(day, 1);
+      return rpeValues.every(rpe => rpe > 0);
+    });
+
+    if (week1Complete) {
+      const newWorkouts = [...workoutData];
+      
+      // Adjust Week 2 workouts based on Week 1 RPE
+      week1Days.forEach(day => {
+        const week1RPE = getRPEForSession(day, 1);
+        const week2Index = newWorkouts.findIndex(w => w.day === day && w.week === 2);
+        
+        if (week2Index !== -1) {
+          const adjustedExercises = newWorkouts[week2Index].exercises.map((exercise, exerciseIndex) => ({
+            ...exercise,
+            weight: adjustWeightBasedOnRPE(exercise.weight, week1RPE[exerciseIndex])
+          }));
+          
+          newWorkouts[week2Index] = {
+            ...newWorkouts[week2Index],
+            exercises: adjustedExercises,
+            title: newWorkouts[week2Index].title + " (Auto-Adjusted)"
+          };
+        }
+      });
+      
+      setAdjustedWorkouts(newWorkouts);
+    }
+  };
 
   const handleRPEChange = (day: number, week: number, exerciseIndex: number, rpe: number) => {
     const key = `${day}-${week}`;
@@ -205,7 +267,14 @@ export function WorkoutDashboard() {
       const current = prev[key] || [0, 0, 0, 0];
       const updated = [...current];
       updated[exerciseIndex] = rpe;
-      return { ...prev, [key]: updated };
+      const newData = { ...prev, [key]: updated };
+      
+      // Check if Week 1 is complete after this change
+      if (week === 1) {
+        setTimeout(() => checkAndAdjustWeek2(), 100);
+      }
+      
+      return newData;
     });
   };
 
@@ -309,7 +378,7 @@ export function WorkoutDashboard() {
 
         {/* Workout Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {workoutData.map((workout, index) => (
+          {adjustedWorkouts.map((workout, index) => (
             <WorkoutCard
               key={index}
               day={workout.day}
