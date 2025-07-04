@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Activity, Target, TrendingUp } from "lucide-react";
+import { addWorkout } from '@/lib/supabaseClient';
 
 interface Exercise {
   name: string;
@@ -199,6 +200,7 @@ export function WorkoutDashboard() {
   const [rpeData, setRPEData] = useState<{ [key: string]: number[] }>({});
   const [completionData, setCompletionData] = useState<{ [key: string]: boolean[] }>({});
   const [adjustedWorkouts, setAdjustedWorkouts] = useState(workoutData);
+  const [saveStatus, setSaveStatus] = useState<string>("");
 
   const adjustWeightBasedOnRPE = (originalWeight: string, rpe: number): string => {
     // Parse weight (handle different formats like "50 kg", "bodyweight", etc.)
@@ -313,6 +315,29 @@ export function WorkoutDashboard() {
   const completedSessions = getCompletedSessions();
   const monthlyAverage = calculateMonthlyAverage();
 
+  // Helper to save current session's workout data as text to Supabase
+  const saveCurrentSession = async (day: number, week: number) => {
+    const workout = adjustedWorkouts.find(w => w.day === day && w.week === week);
+    if (!workout) return;
+    const rpeValues = getRPEForSession(day, week);
+    const completionValues = getCompletionForSession(day, week);
+    // Compose a text summary
+    const text = workout.exercises.map((ex, i) =>
+      `${ex.name}: ${ex.sets}x${ex.reps} @ ${ex.weight} | RPE: ${rpeValues[i] || '-'} | Done: ${completionValues[i] ? 'Yes' : 'No'}`
+    ).join('\n');
+    try {
+      await addWorkout({
+        day,
+        week,
+        text,
+        created_at: new Date().toISOString(),
+      });
+      setSaveStatus(`Saved for Day ${day}, Week ${week}`);
+    } catch (e) {
+      setSaveStatus('Error saving to database');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -379,19 +404,29 @@ export function WorkoutDashboard() {
         {/* Workout Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {adjustedWorkouts.map((workout, index) => (
-            <WorkoutCard
-              key={index}
-              day={workout.day}
-              week={workout.week}
-              title={workout.title}
-              exercises={workout.exercises}
-              onRPEChange={handleRPEChange}
-              onCompletionChange={handleCompletionChange}
-              rpeValues={getRPEForSession(workout.day, workout.week)}
-              completionValues={getCompletionForSession(workout.day, workout.week)}
-            />
+            <div key={index}>
+              <WorkoutCard
+                day={workout.day}
+                week={workout.week}
+                title={workout.title}
+                exercises={workout.exercises}
+                onRPEChange={handleRPEChange}
+                onCompletionChange={handleCompletionChange}
+                rpeValues={getRPEForSession(workout.day, workout.week)}
+                completionValues={getCompletionForSession(workout.day, workout.week)}
+              />
+              <button
+                className="mt-2 px-3 py-1 bg-primary text-white rounded hover:bg-primary/80"
+                onClick={() => saveCurrentSession(workout.day, workout.week)}
+              >
+                Save Session to Database
+              </button>
+            </div>
           ))}
         </div>
+        {saveStatus && (
+          <div className="text-center text-green-600 font-semibold mt-4">{saveStatus}</div>
+        )}
 
         {/* RPE Guide */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
