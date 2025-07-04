@@ -1,24 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs } from "firebase/firestore";
 
 const supabaseUrl = 'https://bcymicgfsmnfyesdpgqa.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjeW1pY2dmc21uZnllc2RwZ3FhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE2MzIyMTUsImV4cCI6MjA2NzIwODIxNX0.lIFIBu-eQzuz7BPH3UIiG2Cvqcvj2GHpeitToOBXUig';
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function addWorkout(workout) {
-  const { data, error } = await supabase
-    .from('workouts')
-    .insert([workout]);
-  if (error) throw error;
-  return data;
+  await addDoc(collection(db, "workouts"), workout);
 }
 
-export async function getWorkouts(userId) {
-  const { data, error } = await supabase
-    .from('workouts')
-    .select('*')
-    .eq('user_id', userId); // Remove .eq if you don't have user_id
-  if (error) throw error;
-  return data;
+export async function getWorkouts() {
+  const querySnapshot = await getDocs(collection(db, "workouts"));
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 const saveCurrentSession = async (day, week) => {
