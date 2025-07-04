@@ -20,3 +20,24 @@ export async function getWorkouts(userId) {
   if (error) throw error;
   return data;
 }
+
+const saveCurrentSession = async (day, week) => {
+  // ...existing code...
+  try {
+    await addWorkout({
+      day,
+      week,
+      text,
+      created_at: new Date().toISOString(),
+    });
+    setSaveStatus(`Saved for Day ${day}, Week ${week}`);
+    console.log('Saved to Supabase!');
+  } catch (e) {
+    setSaveStatus('Error saving to database');
+    console.error('Supabase error:', e);
+  }
+};
+
+supabase.from('workouts').insert([{ text: 'test', day: 1, week: 1, created_at: new Date().toISOString() }])
+  .then(console.log)
+  .catch(console.error);
